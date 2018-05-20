@@ -1,0 +1,2 @@
+unicodecsv==0.14.1
+wheel==0.24.0
