@@ -1,4 +1,4 @@
-from unittest import TestCase
+import unittest
 
 from mock import patch
 from sqlalchemy import create_engine
@@ -9,7 +9,7 @@ from settings import DEFAULT_ID, DEFAULT_DB_TABLE_NAME
 from table_manager import ColumnFactory, TableManager, PrimaryTableManager, SecondaryTableManager
 
 
-class ColumnFactoryTestCase(TestCase):
+class ColumnFactoryTestCase(unittest.TestCase):
 
     def test_question_includes_descriptor(self):
         descriptor = 'descriptor'
@@ -27,7 +27,7 @@ class ColumnFactoryTestCase(TestCase):
         self.assertTrue(type(column.type) is Integer)
 
 
-class TableManagerBaseTestCase(TestCase):
+class TableManagerBaseTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -144,7 +144,7 @@ class SecondaryTableManagerTestCase(TableManagerBaseTestCase):
         self.assertEqual(len(column.foreign_keys), 1)
 
 
-class DatabasePopulatorTestCase(TestCase):
+class DatabasePopulatorTestCase(unittest.TestCase):
 
     @patch('database_populator.DatabasePopulator.ask_for_csv', return_value='./test_fixture.csv')
     @patch('table_manager.TableManager.get_column_type_from_user_input')
@@ -177,3 +177,7 @@ class DatabasePopulatorTestCase(TestCase):
         self.assertTrue(table is not None)
         count_query = db_populator.engine.execute(select([func.count()]).select_from(table))
         self.assertEqual(count_query.fetchall()[0][0], 3)
+
+
+if __name__ == '__main__':
+    unittest.main()
