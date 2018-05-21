@@ -1,83 +1,94 @@
-import unicodecsv
-from collections import OrderedDict
-from sqlalchemy import Integer, ForeignKey, Float, String, Table, Column, MetaData, create_engine
-from sqlalchemy_utils import database_exists, create_database
-from table_creator import TableCreator, PrimaryTableCreator
+import sys
 from os import path, listdir
 
+from sqlalchemy import MetaData, create_engine
+from sqlalchemy_utils import database_exists, create_database
 
-database_name = 'test_db'
+from settings import DEFAULT_DB_TABLE_NAME, DEFAULT_DB
+from table_manager import PrimaryTableManager, SecondaryTableManager
 
-database= '{}'
 
-engine = create_engine('mysql+pymysql://{}/{}?charset=utf8'.format(database, database_name), echo=True)
-metadata = MetaData(bind=engine)
-metadata.reflect(engine)
+class DatabasePopulatorException(Exception):
+    pass
 
 
 class DatabasePopulator(object):
 
     OPTIONS = {
-        '1': 'populate_primary_school_table',
+        '1': 'create_and_populate_primary_table',
         '2': 'add_non_primary_dataset',
         '3': 'add_datasets_from_directory',
-        '4': 'exit'
+        '4': 'exit',
     }
 
-    def __init__(self):
-        # this seems pretty fishy to me
-        if not database_exists(engine.url):
-            create_database(engine.url)
+    def __init__(self, database=DEFAULT_DB):
+        self.database = database
+        self.engine = self._get_engine()
+        self.metadata = self._get_metadata()
 
-    # create db if needed
-    # let user select datasource for primary table or skip if already done
-    def choose_path(self):
-        var = raw_input("""
-        1. Add primary 'school' table from csv
-        2. Add dataset that will populate a separate table as csv
-        3. Add datasets from directory that will not populate primary 'school' table
+    def run(self):
+        choice = self._get_choice()
+        try:
+            getattr(self, self.OPTIONS[choice])()
+        except Exception as e:
+            if hasattr(e, 'message'):
+                print(e.message)
+            else:
+                print(e)
+        self.run()
+
+    def _get_choice(self):
+        return raw_input("""
+        1. Add primary '{primary_table}' table from csv
+        2. Add dataset that will populate a secondary table as csv
+        3. Add datasets from directory to create secondary tables
         4. exit
-        """)
-        if var not in self.OPTIONS.keys():
-            return self.choose_path()
-        getattr(self, self.OPTIONS[var])()
-        self.choose_path()
+        """.format(primary_table=DEFAULT_DB_TABLE_NAME))
 
-    def populate_primary_school_table(self):
-        file_name = raw_input('Type the path name of the .csv file')
-        if path.isfile(file_name):
-            PrimaryTableCreator(file_name=file_name, metadata=metadata).populate_table()
-        else:
-            print('Couldn\'t find file!')
+    def _get_engine(self):
+        return create_engine(self.database, echo=True)
+
+    def _get_metadata(self):
+        if not database_exists(self.engine.url):
+            create_database(self.engine.url)
+        metadata = MetaData(bind=self.engine)
+        metadata.reflect(self.engine)
+        return metadata
+
+    def create_and_populate_primary_table(self):
+        file_name = self.ask_for_csv()
+        PrimaryTableManager(file=file_name, metadata=self.metadata).populate_table()
+
+    def ask_for_csv(self):
+        return raw_input('Type the path name of the .csv file: ')
 
     def add_non_primary_dataset(self):
-        file_name = raw_input('Type the path name of the .csv file')
-        if path.isfile(file_name):
-            if engine.dialect.has_table(engine, 'school'):
-                table_name = raw_input('Type a table name')
-                TableCreator(file_name=file_name, table_name=table_name, metadata=metadata).populate_table()
-
-            else:
-                print('Need to populate school table first')
-        else:
-            print('Couldn\'t find file!')
+        self._raise_exc_if_primary_table_not_present()
+        file_name = self.ask_for_csv()
+        self._name_table_and_populate(file_name)
+        print('Success!')
 
     def add_datasets_from_directory(self):
-        if engine.dialect.has_table(engine, 'school'):
-            tables_to_populate = []
-            dir = raw_input('Type the name of the directory')
-            if path.exists(dir):
-                for f in listdir(dir):
-                    if path.isfile(path.join(dir, f)) and path.join(dir, f).endswith('.csv'):
-                        table_name = raw_input('Type a table name for file {}'.format(f))
-                        creator = TableCreator(file_name=path.join(dir, f), table_name=table_name, metadata=metadata)
-                        creator.create_table()
-                        tables_to_populate.append(creator)
-            for table in tables_to_populate:
-                table.populate_table()
-        else:
-            print('Need to populate school table first')
+        self._raise_exc_if_primary_table_not_present()
+        dir = self.ask_for_directory()
+        for f in listdir(dir):
+            if path.isfile(path.join(dir, f)) and path.join(dir, f).endswith('.csv'):
+                self._name_table_and_populate(path.join(dir, f))
+
+    def ask_for_directory(self):
+        return raw_input('Type the name of the directory: ')
+
+    def _name_table_and_populate(self, file_name):
+        table_name = self.ask_for_table_name(file_name)
+        SecondaryTableManager(file=file_name, table_name=table_name, metadata=self.metadata).populate_table()
+        print('Success!')
+
+    def ask_for_table_name(self, file_name):
+        return raw_input('Type a table name for {}: '.format(file_name))
+
+    def _raise_exc_if_primary_table_not_present(self):
+        if not self.engine.dialect.has_table(self.engine, DEFAULT_DB_TABLE_NAME):
+            raise DatabasePopulatorException('Need to create and populate {} table first!'.format(DEFAULT_DB_TABLE_NAME))
 
     def exit(self):
-        import sys
         sys.exit()
