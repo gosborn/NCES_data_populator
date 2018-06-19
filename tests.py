@@ -1,12 +1,22 @@
 import unittest
 
 from mock import patch
-from sqlalchemy import create_engine
-from sqlalchemy import select, func, Integer, Table, Column, MetaData
+from sqlalchemy import (
+    create_engine,
+    select,
+    func,
+    Integer,
+    Table,
+    Column,
+    MetaData,
+)
+from sqlalchemy_utils import drop_database
 
 from database_populator import DatabasePopulator, DatabasePopulatorException
 from settings import DEFAULT_ID, DEFAULT_DB_TABLE_NAME
 from table_manager import ColumnFactory, TableManager, PrimaryTableManager, SecondaryTableManager
+
+from secrets import TEST_DB
 
 
 class ColumnFactoryTestCase(unittest.TestCase):
@@ -146,11 +156,14 @@ class SecondaryTableManagerTestCase(TableManagerBaseTestCase):
 
 class DatabasePopulatorTestCase(unittest.TestCase):
 
+    def tearDown(self):
+        drop_database(TEST_DB)
+
     @patch('database_populator.DatabasePopulator.ask_for_csv', return_value='./test_fixture.csv')
     @patch('table_manager.TableManager.get_column_type_from_user_input')
     def test_create_and_populate_primary_table_calls_populate_table(self, mock_column_type, _):
         mock_column_type.return_value = TableManager.COLUMN_MAPPINGS.get('3')
-        db_populator = DatabasePopulator('sqlite:///:memory:')
+        db_populator = DatabasePopulator(TEST_DB)
         db_populator.create_and_populate_primary_table()
         table = db_populator.metadata.tables.get(DEFAULT_DB_TABLE_NAME)
         self.assertTrue(table is not None)
@@ -162,15 +175,15 @@ class DatabasePopulatorTestCase(unittest.TestCase):
     @patch('table_manager.TableManager.get_column_type_from_user_input')
     def test_add_non_primary_dataset_raise_exc_if_no_primary_table(self, mock_column_type, _, __):
         mock_column_type.return_value = TableManager.COLUMN_MAPPINGS.get('3')
-        db_populator = DatabasePopulator('sqlite:///:memory:')
+        db_populator = DatabasePopulator(TEST_DB)
         self.assertRaises(DatabasePopulatorException, db_populator.add_non_primary_dataset)
 
     @patch('database_populator.DatabasePopulator.ask_for_table_name', return_value='test_secondary')
     @patch('database_populator.DatabasePopulator.ask_for_csv', return_value='./test_fixture.csv')
     @patch('table_manager.TableManager.get_column_type_from_user_input')
-    def test_add_non_primary_dataset_raise_exc_if_no_primary_table(self, mock_column_type, _, __):
+    def test_add_non_primary_dataset(self, mock_column_type, _, __):
         mock_column_type.return_value = TableManager.COLUMN_MAPPINGS.get('3')
-        db_populator = DatabasePopulator('sqlite:///:memory:')
+        db_populator = DatabasePopulator(TEST_DB)
         db_populator.create_and_populate_primary_table()
         db_populator.add_non_primary_dataset()
         table = db_populator.metadata.tables.get('test_secondary')
